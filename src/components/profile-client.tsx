@@ -8,6 +8,7 @@ import { signOutAction } from "@/app/actions/auth";
 import { updateProfileAction } from "@/app/actions/profile";
 import {
   clearKeyhausPrivateCaches,
+  PWAInstallButton,
   usePwaInstallPrompt,
 } from "@/components/pwa-manager";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ export function ProfileClient({
   email: string | null;
 }) {
   const router = useRouter();
-  const { canPrompt, isStandalone, triggerInstall } = usePwaInstallPrompt();
+  const { canPrompt, isIOS, isStandalone, triggerInstall } = usePwaInstallPrompt();
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
@@ -142,7 +143,7 @@ export function ProfileClient({
         </Button>
       </form>
 
-      {!isStandalone && canPrompt && (
+      {!isStandalone && (canPrompt || isIOS) && (
         <div className="flex items-center justify-between gap-3 rounded-[20px] border-[1.5px] border-[#E2DFD6] bg-white p-4">
           <div>
             <p className="font-heading text-sm font-bold text-[#17211F]">
@@ -152,10 +153,14 @@ export function ProfileClient({
               Open saved homes and tours faster with offline access.
             </p>
           </div>
-          <Button size="sm" variant="secondary" onClick={triggerInstall}>
-            <Download className="h-4 w-4" strokeWidth={2} />
-            <span>Install</span>
-          </Button>
+          {canPrompt ? (
+            <Button size="sm" variant="secondary" onClick={() => void triggerInstall()}>
+              <Download className="h-4 w-4" strokeWidth={2} />
+              <span>Install</span>
+            </Button>
+          ) : (
+            <PWAInstallButton />
+          )}
         </div>
       )}
 

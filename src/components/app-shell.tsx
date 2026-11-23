@@ -12,6 +12,7 @@ import {
   User,
 } from "lucide-react";
 import { KeyhausLogo } from "@/components/keyhaus-logo";
+import { PWAInstallButton } from "@/components/pwa-manager";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 
@@ -95,6 +96,7 @@ export function AppShell({
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
+            <PWAInstallButton />
             {!isSignedIn ? (
               <Link
                 href="/auth/signin"

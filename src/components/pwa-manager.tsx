@@ -1,8 +1,16 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
-import { Download, RefreshCw, Share, WifiOff, X } from "lucide-react";
+import { Download, PlusSquare, RefreshCw, Share, Smartphone, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -11,6 +19,40 @@ interface BeforeInstallPromptEvent extends Event {
 
 const VISIT_COUNT_KEY = "keyhaus_visit_count";
 const INSTALL_DISMISSED_KEY = "keyhaus_install_dismissed";
+
+// Module-level store so any mounted component (header button, profile card, banner)
+// retains the captured beforeinstallprompt event across client-side navigations.
+let sharedDeferredPrompt: BeforeInstallPromptEvent | null = null;
+let sharedIsInstalled = false;
+let sharedListenersInstalled = false;
+const promptSubscribers = new Set<() => void>();
+
+function notifyPromptSubscribers() {
+  for (const listener of promptSubscribers) {
+    listener();
+  }
+}
+
+function ensureInstallEventListeners() {
+  if (typeof window === "undefined" || sharedListenersInstalled) return;
+  sharedListenersInstalled = true;
+
+  sharedIsInstalled =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+
+  window.addEventListener("beforeinstallprompt", (e: Event) => {
+    e.preventDefault();
+    sharedDeferredPrompt = e as BeforeInstallPromptEvent;
+    notifyPromptSubscribers();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    sharedIsInstalled = true;
+    sharedDeferredPrompt = null;
+    notifyPromptSubscribers();
+  });
+}
 
 export function clearKeyhausPrivateCaches(): void {
   if (typeof window === "undefined") return;
@@ -39,17 +81,21 @@ export function useOnlineStatus(): boolean {
 
 export function usePwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] =
-    useState<BeforeInstallPromptEvent | null>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
+    useState<BeforeInstallPromptEvent | null>(sharedDeferredPrompt);
+  const [isStandalone, setIsStandalone] = useState(sharedIsInstalled);
   const [isIOS, setIsIOS] = useState(false);
   const [isSecondVisitOrMore, setIsSecondVisitOrMore] = useState(false);
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsStandalone(standalone);
+    ensureInstallEventListeners();
+
+    const syncFromStore = () => {
+      setDeferredPrompt(sharedDeferredPrompt);
+      setIsStandalone(sharedIsInstalled);
+    };
+    syncFromStore();
+    promptSubscribers.add(syncFromStore);
 
     const ua = window.navigator.userAgent.toLowerCase();
     const ios = /iphone|ipad|ipod/.test(ua) && !("MSStream" in window);
@@ -64,20 +110,8 @@ export function usePwaInstallPrompt() {
       setIsSecondVisitOrMore(false);
     }
 
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-    const handleInstalled = () => {
-      setIsStandalone(true);
-      setDeferredPrompt(null);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
-    window.addEventListener("appinstalled", handleInstalled);
     return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
-      window.removeEventListener("appinstalled", handleInstalled);
+      promptSubscribers.delete(syncFromStore);
     };
   }, []);
 
@@ -91,12 +125,14 @@ export function usePwaInstallPrompt() {
   };
 
   const triggerInstall = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
+    const promptEvent = sharedDeferredPrompt ?? deferredPrompt;
+    if (!promptEvent) return false;
+    await promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
     if (choice.outcome === "accepted") {
-      setDeferredPrompt(null);
-      setIsStandalone(true);
+      sharedDeferredPrompt = null;
+      sharedIsInstalled = true;
+      notifyPromptSubscribers();
       return true;
     }
     return false;
@@ -113,6 +149,100 @@ export function usePwaInstallPrompt() {
   };
 }
 
+function IosInstallGuideDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Install Keyhaus on iPhone or iPad</DialogTitle>
+          <DialogDescription>
+            Add Keyhaus to your home screen for full-screen browsing and offline access to opened homes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ol className="mt-4 space-y-3 text-sm text-[#17211F]">
+          <li className="flex items-start gap-3 rounded-[14px] border-[1.5px] border-[#E2DFD6] bg-[#F6F4EF] p-3">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DDEEE9] text-[#0E6B5B]">
+              <Share className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <div>
+              <p className="font-semibold">1. Tap the Share icon</p>
+              <p className="text-xs text-[#5B6663]">
+                Find the Share button in Safari&apos;s bottom or top toolbar.
+              </p>
+            </div>
+          </li>
+          <li className="flex items-start gap-3 rounded-[14px] border-[1.5px] border-[#E2DFD6] bg-[#F6F4EF] p-3">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DDEEE9] text-[#0E6B5B]">
+              <PlusSquare className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <div>
+              <p className="font-semibold">2. Tap Add to Home Screen</p>
+              <p className="text-xs text-[#5B6663]">
+                Scroll the share sheet, choose &ldquo;Add to Home Screen&rdquo;, then tap Add.
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <div className="mt-5">
+          <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
+            Got it
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function PWAInstallButton() {
+  const { canPrompt, isStandalone, isIOS, triggerInstall } = usePwaInstallPrompt();
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
+
+  if (isStandalone) {
+    return null;
+  }
+
+  if (canPrompt) {
+    return (
+      <button
+        type="button"
+        onClick={() => void triggerInstall()}
+        aria-label="Install Keyhaus app"
+        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border-[1.5px] border-[#E2DFD6] bg-[#DDEEE9] px-3 text-xs font-semibold text-[#0E6B5B] transition-colors hover:bg-[#cfe6df] cursor-pointer whitespace-nowrap"
+      >
+        <Download className="h-4 w-4 shrink-0" strokeWidth={2} />
+        <span className="hidden sm:inline">Install app</span>
+      </button>
+    );
+  }
+
+  if (isIOS) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setShowIOSGuide(true)}
+          aria-label="Install Keyhaus on iOS"
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border-[1.5px] border-[#E2DFD6] bg-[#DDEEE9] px-3 text-xs font-semibold text-[#0E6B5B] transition-colors hover:bg-[#cfe6df] cursor-pointer whitespace-nowrap"
+        >
+          <Smartphone className="h-4 w-4 shrink-0" strokeWidth={2} />
+          <span className="hidden sm:inline">Install app</span>
+        </button>
+        <IosInstallGuideDialog open={showIOSGuide} onOpenChange={setShowIOSGuide} />
+      </>
+    );
+  }
+
+  return null;
+}
+
 export function PwaManager() {
   const isOnline = useOnlineStatus();
   const {
@@ -125,6 +255,7 @@ export function PwaManager() {
     triggerInstall,
   } = usePwaInstallPrompt();
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -194,11 +325,12 @@ export function PwaManager() {
       {showInstallBanner && !waitingWorker && (
         <div className="fixed bottom-20 left-4 right-4 z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-[20px] border-[1.5px] border-[#E2DFD6] bg-white p-4 shadow-lg md:bottom-6">
           <div className="flex min-w-0 items-center gap-3">
-            <img
+            <Image
               src="/icon-192.png"
               alt="Keyhaus icon"
               width={40}
               height={40}
+              referrerPolicy="no-referrer"
               className="h-10 w-10 shrink-0 rounded-[10px]"
             />
             <div className="min-w-0">
@@ -215,26 +347,34 @@ export function PwaManager() {
 
           <div className="flex shrink-0 items-center gap-1">
             {canPrompt ? (
-              <Button size="sm" onClick={triggerInstall}>
+              <Button size="sm" onClick={() => void triggerInstall()}>
                 <Download className="h-4 w-4" strokeWidth={2} />
                 Install
               </Button>
             ) : (
-              <span className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#DDEEE9] text-[#0E6B5B]">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowIOSGuide(true)}
+                aria-label="How to install on iOS"
+              >
                 <Share className="h-4 w-4" strokeWidth={2} />
-              </span>
+                How to
+              </Button>
             )}
             <button
               type="button"
               onClick={dismiss}
               aria-label="Dismiss install banner"
-              className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-full text-[#5B6663] hover:bg-[#F6F4EF]"
+              className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-full text-[#5B6663] hover:bg-[#F6F4EF] cursor-pointer"
             >
               <X className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
         </div>
       )}
+
+      <IosInstallGuideDialog open={showIOSGuide} onOpenChange={setShowIOSGuide} />
     </>
   );
 }

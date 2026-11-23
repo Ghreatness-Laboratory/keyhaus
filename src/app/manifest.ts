@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Keyhaus",
     description:
       "Browse Nigerian rental homes with room-by-room photo tours and honest neighborhood reports.",
-    start_url: "/explore?source=pwa",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
