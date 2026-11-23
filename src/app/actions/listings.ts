@@ -15,6 +15,8 @@ import {
   roomLinkSchema,
   roomSchema,
 } from "@/lib/schemas";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { geocodeNigerianListingServer } from "@/lib/geocoding";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingStatus } from "@/types/database";
@@ -34,22 +36,37 @@ export async function saveListingDetailsAction(
 
   const session = await getCurrentSession();
   if (!session.userId) return { ok: false, error: "Sign in required." };
-  if (session.profile?.role !== "landlord") {
+  if (session.profile?.role !== "landlord" && !session.profile?.is_admin) {
     return { ok: false, error: "Switch to a landlord account to list homes." };
   }
 
   const values = parsed.data;
+  const normalizedMatterport =
+    values.matterport_url && values.matterport_url.trim().length > 0
+      ? values.matterport_url.trim()
+      : null;
+
+  const geocoded = await geocodeNigerianListingServer({
+    addressLine: values.address_line,
+    area: values.area,
+    lga: values.lga,
+    state: values.state,
+  });
 
   if (!isSupabaseConfigured()) {
     const store = getDemoStore();
     const id = listingId ?? crypto.randomUUID();
     const existing = store.listings[id];
-    if (existing && existing.landlord_id !== session.userId) {
+    if (
+      existing &&
+      existing.landlord_id !== session.userId &&
+      !session.profile?.is_admin
+    ) {
       return { ok: false, error: "You do not own this listing." };
     }
     store.listings[id] = {
       id,
-      landlord_id: session.userId,
+      landlord_id: existing?.landlord_id ?? session.userId,
       title: values.title,
       description: values.description,
       property_type: values.property_type,
@@ -60,12 +77,18 @@ export async function saveListingDetailsAction(
       caution_fee: values.caution_fee ?? null,
       bedrooms: values.bedrooms,
       bathrooms: values.bathrooms,
+      size_sqm: values.size_sqm ?? null,
       furnished: values.furnished,
       amenities: values.amenities,
       state: values.state,
       lga: values.lga,
       area: values.area,
       address_line: values.address_line,
+      latitude: geocoded.exact?.latitude ?? existing?.latitude ?? null,
+      longitude: geocoded.exact?.longitude ?? existing?.longitude ?? null,
+      approx_latitude: geocoded.approximate.latitude,
+      approx_longitude: geocoded.approximate.longitude,
+      matterport_url: normalizedMatterport,
       cover_path: existing?.cover_path ?? null,
       cover_thumb_path: existing?.cover_thumb_path ?? null,
       status: existing?.status ?? "draft",
@@ -73,25 +96,39 @@ export async function saveListingDetailsAction(
       published_at: existing?.published_at ?? null,
     };
     revalidatePath("/landlord");
+    revalidatePath(`/listing/${id}`);
     return { ok: true, data: { listingId: id } };
   }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { ok: false, error: "Supabase unavailable." };
 
+  const writePayload = {
+    ...values,
+    agency_fee: values.agency_fee ?? null,
+    legal_fee: values.legal_fee ?? null,
+    caution_fee: values.caution_fee ?? null,
+    size_sqm: values.size_sqm ?? null,
+    matterport_url: normalizedMatterport,
+    approx_latitude: geocoded.approximate.latitude,
+    approx_longitude: geocoded.approximate.longitude,
+    ...(geocoded.exact
+      ? {
+          latitude: geocoded.exact.latitude,
+          longitude: geocoded.exact.longitude,
+        }
+      : {}),
+  };
+
   if (listingId) {
-    const { error } = await supabase
-      .from("listings")
-      .update({
-        ...values,
-        agency_fee: values.agency_fee ?? null,
-        legal_fee: values.legal_fee ?? null,
-        caution_fee: values.caution_fee ?? null,
-      })
-      .eq("id", listingId)
-      .eq("landlord_id", session.userId);
+    let query = supabase.from("listings").update(writePayload).eq("id", listingId);
+    if (!session.profile?.is_admin) {
+      query = query.eq("landlord_id", session.userId);
+    }
+    const { error } = await query;
     if (error) return { ok: false, error: error.message };
     revalidatePath("/landlord");
+    revalidatePath(`/listing/${listingId}`);
     return { ok: true, data: { listingId } };
   }
 
@@ -99,20 +136,20 @@ export async function saveListingDetailsAction(
     .from("listings")
     .insert({
       landlord_id: session.userId,
-      ...values,
-      agency_fee: values.agency_fee ?? null,
-      legal_fee: values.legal_fee ?? null,
-      caution_fee: values.caution_fee ?? null,
+      ...writePayload,
       status: "draft",
     })
     .select("id")
     .single();
 
   if (error || !data) {
+    // Fallback if admin key is needed to insert private columns
+    void createSupabaseAdminClient();
     return { ok: false, error: error?.message ?? "Could not create draft." };
   }
+  const createdId = (data as { id: string }).id;
   revalidatePath("/landlord");
-  return { ok: true, data: { listingId: (data as { id: string }).id } };
+  return { ok: true, data: { listingId: createdId } };
 }
 
 export async function saveListingEnvironmentAction(

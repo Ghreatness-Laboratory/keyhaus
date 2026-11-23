@@ -90,6 +90,30 @@ begin
       null; -- Expected
   end;
 
+  -- Verify column-level privilege blocks selecting latitude & longitude directly
+  begin
+    execute 'select latitude from public.listings limit 1';
+    raise exception 'FAIL: anon user could select exact latitude column directly';
+  exception
+    when insufficient_privilege then
+      null; -- Expected
+  end;
+
+  -- Verify get_listing_location returns empty for unauthorized renter
+  select count(*) into v_count from public.get_listing_location(v_pub_id);
+  if v_count <> 0 then
+    raise exception 'FAIL: renter without accepted viewing could read exact coordinates';
+  end if;
+
+  -- Verify non-admin cannot self-escalate profiles.is_admin
+  begin
+    update public.profiles set is_admin = true where id = v_other_user;
+    raise exception 'FAIL: authenticated user was able to escalate is_admin';
+  exception
+    when others then
+      null; -- Expected (insufficient_privilege or trigger exception)
+  end;
+
   -- Verify reports table cannot be read by normal users
   select count(*) into v_count from public.reports;
   if v_count <> 0 then

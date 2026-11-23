@@ -1,13 +1,16 @@
 import { cookies } from "next/headers";
 import { BROWSE_PAGE_SIZE, PROPERTY_TYPES } from "@/lib/constants";
-import { isSupabaseConfigured, resolveListingPhotoUrl } from "@/lib/supabase/config";
+import { isSupabaseConfigured, resolveDepthMapUrl, resolveListingPhotoUrl } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   BrowseFilters,
+  DepthMap,
   Listing,
   ListingCardData,
+  ListingCoordinates,
   ListingDetailData,
   ListingEnvironment,
+  ListingFloorPlan,
   Profile,
   PublicProfile,
   Room,
@@ -276,16 +279,17 @@ export async function getListingDetail(
   listingId: string
 ): Promise<ListingDetailData | null> {
   const session = await getCurrentSession();
+  const isAdmin = Boolean(session.profile?.is_admin);
 
   if (!isSupabaseConfigured()) {
     const store = getDemoStore();
     const raw = store.listings[listingId];
     if (!raw) return null;
-    if (raw.status !== "published" && raw.landlord_id !== session.userId) {
+    if (raw.status !== "published" && raw.landlord_id !== session.userId && !isAdmin) {
       return null;
     }
 
-    const { address_line, ...safeListing } = raw;
+    const { address_line, latitude, longitude, ...safeListing } = raw;
     const env = store.environments[listingId] ?? null;
     const rooms = Object.values(store.rooms)
       .filter((r) => r.listing_id === listingId)
@@ -317,8 +321,22 @@ export async function getListingDetail(
         ) ?? null)
       : null;
 
-    const canSeeAddress =
-      session.userId === raw.landlord_id || myViewingRequest?.status === "accepted";
+    const canViewExactLocation =
+      session.userId === raw.landlord_id ||
+      isAdmin ||
+      myViewingRequest?.status === "accepted";
+
+    const exactLocation: ListingCoordinates | null =
+      canViewExactLocation &&
+      typeof latitude === "number" &&
+      typeof longitude === "number"
+        ? { latitude, longitude }
+        : null;
+
+    const floorPlan = store.floorPlans[listingId] ?? null;
+    const depthMaps = Object.values(store.depthMaps).filter(
+      (d) => d.listing_id === listingId
+    );
 
     return {
       listing: safeListing,
@@ -328,7 +346,11 @@ export async function getListingDetail(
       landlord,
       isSaved,
       myViewingRequest,
-      revealedAddress: canSeeAddress ? (address_line ?? null) : null,
+      revealedAddress: canViewExactLocation ? (address_line ?? null) : null,
+      exactLocation,
+      canViewExactLocation,
+      floorPlan,
+      depthMaps,
       landlordPhone: session.userId ? (landlordRecord?.phone ?? null) : null,
     };
   }
@@ -339,15 +361,21 @@ export async function getListingDetail(
   const { data: listingRow, error } = await supabase
     .from("listings")
     .select(
-      "id, landlord_id, title, description, property_type, rent_amount, rent_period, agency_fee, legal_fee, caution_fee, bedrooms, bathrooms, furnished, amenities, state, lga, area, cover_path, cover_thumb_path, status, created_at, published_at"
+      "id, landlord_id, title, description, property_type, rent_amount, rent_period, agency_fee, legal_fee, caution_fee, bedrooms, bathrooms, size_sqm, furnished, amenities, state, lga, area, approx_latitude, approx_longitude, matterport_url, cover_path, cover_thumb_path, status, created_at, published_at"
     )
     .eq("id", listingId)
     .maybeSingle();
 
   if (error || !listingRow) return null;
-  const listing = listingRow as Omit<Listing, "address_line">;
+  const listing = listingRow as Omit<Listing, "address_line" | "latitude" | "longitude">;
 
-  const [{ data: envData }, { data: roomRows }, { data: landlordRow }] = await Promise.all([
+  const [
+    { data: envData },
+    { data: roomRows },
+    { data: landlordRow },
+    { data: floorPlanRow },
+    { data: depthMapRows },
+  ] = await Promise.all([
     supabase
       .from("listing_environment")
       .select("*")
@@ -363,6 +391,15 @@ export async function getListingDetail(
       .select("*")
       .eq("id", listing.landlord_id)
       .maybeSingle(),
+    supabase
+      .from("listing_floor_plans")
+      .select("*")
+      .eq("listing_id", listingId)
+      .maybeSingle(),
+    supabase
+      .from("listing_depth_maps")
+      .select("*")
+      .eq("listing_id", listingId),
   ]);
 
   const rooms = ((roomRows ?? []) as Room[]).map((r) => ({
@@ -383,10 +420,11 @@ export async function getListingDetail(
   let isSaved = false;
   let myViewingRequest: ViewingRequest | null = null;
   let revealedAddress: string | null = null;
+  let exactLocation: ListingCoordinates | null = null;
   let landlordPhone: string | null = null;
 
   if (session.userId) {
-    const [savedRes, viewingRes, addressRes, contactRes] = await Promise.all([
+    const [savedRes, viewingRes, addressRes, locationRes, contactRes] = await Promise.all([
       supabase
         .from("saved_listings")
         .select("listing_id")
@@ -402,17 +440,37 @@ export async function getListingDetail(
         .limit(1)
         .maybeSingle(),
       supabase.rpc("get_listing_address", { p_listing_id: listingId }),
+      supabase.rpc("get_listing_location", { p_listing_id: listingId }),
       supabase.rpc("get_landlord_contact", { p_listing_id: listingId }),
     ]);
 
     isSaved = Boolean(savedRes.data);
     myViewingRequest = (viewingRes.data as ViewingRequest | null) ?? null;
     revealedAddress = (addressRes.data as string | null) ?? null;
+    const locRows = locationRes.data as ListingCoordinates[] | null;
+    if (locRows && locRows.length > 0 && typeof locRows[0]?.latitude === "number" && typeof locRows[0]?.longitude === "number") {
+      exactLocation = {
+        latitude: locRows[0].latitude,
+        longitude: locRows[0].longitude,
+      };
+    }
     const contactArr = contactRes.data as
       | Array<{ full_name: string | null; phone: string | null }>
       | null;
     landlordPhone = contactArr?.[0]?.phone ?? null;
   }
+
+  const canViewExactLocation =
+    session.userId === listing.landlord_id ||
+    isAdmin ||
+    myViewingRequest?.status === "accepted" ||
+    Boolean(exactLocation);
+
+  const depthMaps = ((depthMapRows ?? []) as DepthMap[]).map((dm) => ({
+    ...dm,
+    photo_path: resolveListingPhotoUrl(dm.photo_path),
+    depth_path: resolveDepthMapUrl(dm.depth_path) ?? dm.depth_path,
+  }));
 
   return {
     listing: {
@@ -429,6 +487,10 @@ export async function getListingDetail(
     isSaved,
     myViewingRequest,
     revealedAddress,
+    exactLocation,
+    canViewExactLocation,
+    floorPlan: (floorPlanRow as ListingFloorPlan | null) ?? null,
+    depthMaps,
     landlordPhone,
   };
 }

@@ -1,20 +1,26 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Box,
   CalendarClock,
   Check,
   Compass,
+  Eye,
   Flag,
   Heart,
   Home,
+  Images,
+  Layers,
   Lock,
   MapPin,
   MessageCircle,
   Phone,
+  Satellite,
   ShieldAlert,
   UserCheck,
 } from "lucide-react";
@@ -36,6 +42,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BlueprintFloorPlanViewer } from "@/components/viewers/blueprint-floor-plan";
 import { AMENITIES, PROPERTY_TYPES, TIME_WINDOWS } from "@/lib/constants";
 import {
   buildTelUrl,
@@ -45,23 +53,66 @@ import {
   formatNaira,
 } from "@/lib/nigeria";
 import { cn } from "@/lib/utils";
-import type { ListingDetailData } from "@/types/database";
+import type { ListingDetailData, ViewingModeFlags } from "@/types/database";
+
+const AreaSatelliteView = dynamic(
+  () => import("@/components/viewers/area-satellite-view"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[340px] items-center justify-center rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-white text-sm text-[#5B6663]">
+        Loading Satellite Area View...
+      </div>
+    ),
+  }
+);
+
+const StreetViewPanel = dynamic(
+  () => import("@/components/viewers/street-view-panel"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[340px] items-center justify-center rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-white text-sm text-[#5B6663]">
+        Loading Street View...
+      </div>
+    ),
+  }
+);
+
+const Listing3dView = dynamic(
+  () => import("@/components/viewers/listing-3d-view"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[340px] items-center justify-center rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-white text-sm text-[#5B6663]">
+        Loading 3D View...
+      </div>
+    ),
+  }
+);
+
+type ViewingTab = "photos" | "area" | "street" | "plan" | "view3d";
 
 export function ListingDetailClient({
   detail,
   isSignedIn,
   currentUserId,
+  isAdmin = false,
+  viewingModeFlags,
 }: {
   detail: ListingDetailData;
   isSignedIn: boolean;
   currentUserId: string | null;
+  isAdmin?: boolean;
+  viewingModeFlags: ViewingModeFlags;
 }) {
   const router = useRouter();
   const isOnline = useOnlineStatus();
-  const { listing, environment, rooms, landlord } = detail;
+  const { listing, environment, rooms, roomLinks, landlord } = detail;
 
   const [saved, setSaved] = useState(detail.isSaved);
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<ViewingTab>("photos");
   const [viewingOpen, setViewingOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -217,58 +268,175 @@ export function ListingDetailClient({
         </button>
       </div>
 
-      {/* Photo Gallery */}
-      <section aria-label="Property photos" className="space-y-3">
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-[#DDEEE9]">
-          {activeImage ? (
-            <img
-              src={activeImage.src}
-              alt={activeImage.alt}
-              width={activeImage.width}
-              height={activeImage.height}
-              referrerPolicy="no-referrer"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[#0E6B5B]">
-              <Home className="h-10 w-10" strokeWidth={2} />
-            </div>
-          )}
-          {activeImage && (
-            <span className="absolute bottom-3 left-3 rounded-full bg-[#17211F]/80 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
-              {activeImage.name}
-            </span>
-          )}
-        </div>
+      {/* Media & Viewing Modes */}
+      {(() => {
+        const hasApproxCoords =
+          typeof listing.approx_latitude === "number" &&
+          typeof listing.approx_longitude === "number";
+        const showAreaTab = viewingModeFlags.areaView && hasApproxCoords;
+        const showStreetTab =
+          viewingModeFlags.streetView &&
+          (hasApproxCoords || Boolean(detail.exactLocation));
+        const showPlanTab =
+          viewingModeFlags.floorPlan2d &&
+          (Boolean(detail.floorPlan) || isOwner || isAdmin);
+        const show3dTab =
+          viewingModeFlags.view3d &&
+          (rooms.some((r) => r.kind === "panorama") ||
+            Boolean(listing.matterport_url) ||
+            galleryImages.length > 0);
 
-        {galleryImages.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {galleryImages.map((img, idx) => (
-              <button
-                key={img.id}
-                type="button"
-                onClick={() => setActivePhotoIdx(idx)}
-                className={cn(
-                  "relative h-16 w-24 shrink-0 overflow-hidden rounded-[14px] border-2 transition-all cursor-pointer",
-                  idx === activePhotoIdx
-                    ? "border-[#0E6B5B]"
-                    : "border-transparent opacity-75 hover:opacity-100"
-                )}
+        const availableTabs: Array<{
+          id: ViewingTab;
+          label: string;
+          icon: typeof Images;
+        }> = [
+          { id: "photos", label: "Photos", icon: Images },
+          ...(showAreaTab
+            ? [{ id: "area" as const, label: "Area View", icon: Satellite }]
+            : []),
+          ...(showStreetTab
+            ? [{ id: "street" as const, label: "Street View", icon: Eye }]
+            : []),
+          ...(showPlanTab
+            ? [{ id: "plan" as const, label: "2D Plan", icon: Layers }]
+            : []),
+          ...(show3dTab
+            ? [{ id: "view3d" as const, label: "3D View", icon: Box }]
+            : []),
+        ];
+
+        const currentTab = availableTabs.some((t) => t.id === activeTab)
+          ? activeTab
+          : "photos";
+
+        return (
+          <section aria-label="Property viewing modes" className="space-y-3">
+            {availableTabs.length > 1 && (
+              <Tabs
+                value={currentTab}
+                onValueChange={(val) => setActiveTab(val as ViewingTab)}
               >
-                <img
-                  src={img.src}
-                  alt={img.alt}
-                  width={160}
-                  height={120}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  className="h-full w-full object-cover"
+                <TabsList className="flex w-full justify-start gap-1 overflow-x-auto">
+                  {availableTabs.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <TabsTrigger
+                        key={tab.id}
+                        value={tab.id}
+                        className="shrink-0 gap-1.5 px-3 text-xs sm:text-sm"
+                      >
+                        <Icon className="h-4 w-4" strokeWidth={2} />
+                        <span>{tab.label}</span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </Tabs>
+            )}
+
+            {currentTab === "photos" && (
+              <div className="space-y-3">
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-[#DDEEE9]">
+                  {activeImage ? (
+                    <img
+                      src={activeImage.src}
+                      alt={activeImage.alt}
+                      width={activeImage.width}
+                      height={activeImage.height}
+                      referrerPolicy="no-referrer"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[#0E6B5B]">
+                      <Home className="h-10 w-10" strokeWidth={2} />
+                    </div>
+                  )}
+                  {activeImage && (
+                    <span className="absolute bottom-3 left-3 rounded-full bg-[#17211F]/80 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                      {activeImage.name}
+                    </span>
+                  )}
+                </div>
+
+                {galleryImages.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {galleryImages.map((img, idx) => (
+                      <button
+                        key={img.id}
+                        type="button"
+                        onClick={() => setActivePhotoIdx(idx)}
+                        className={cn(
+                          "relative h-16 w-24 shrink-0 overflow-hidden rounded-[14px] border-2 transition-all cursor-pointer",
+                          idx === activePhotoIdx
+                            ? "border-[#0E6B5B]"
+                            : "border-transparent opacity-75 hover:opacity-100"
+                        )}
+                      >
+                        <img
+                          src={img.src}
+                          alt={img.alt}
+                          width={160}
+                          height={120}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentTab === "area" &&
+              typeof listing.approx_latitude === "number" &&
+              typeof listing.approx_longitude === "number" && (
+                <AreaSatelliteView
+                  area={listing.area}
+                  lga={listing.lga}
+                  state={listing.state}
+                  approxLatitude={listing.approx_latitude}
+                  approxLongitude={listing.approx_longitude}
                 />
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+              )}
+
+            {currentTab === "street" && (
+              <StreetViewPanel
+                listingTitle={listing.title}
+                area={listing.area}
+                canViewExactLocation={detail.canViewExactLocation}
+                exactLatitude={detail.exactLocation?.latitude ?? null}
+                exactLongitude={detail.exactLocation?.longitude ?? null}
+              />
+            )}
+
+            {currentTab === "plan" && (
+              <BlueprintFloorPlanViewer
+                listingId={listing.id}
+                listingTitle={listing.title}
+                initialFloorPlan={detail.floorPlan}
+                canGenerate={isOwner || isAdmin}
+                isAdmin={isAdmin}
+              />
+            )}
+
+            {currentTab === "view3d" && (
+              <Listing3dView
+                listingId={listing.id}
+                listingTitle={listing.title}
+                rooms={rooms}
+                roomLinks={roomLinks}
+                depthMaps={detail.depthMaps}
+                matterportUrl={listing.matterport_url}
+                activePhotoUrl={activeImage?.src ?? null}
+                activePhotoLabel={activeImage?.name ?? listing.title}
+                canGenerateDepth={isOwner || isAdmin}
+              />
+            )}
+          </section>
+        );
+      })()}
 
       {/* Primary Tour CTA + Rent & Move-in Summary */}
       <section className="rounded-[22px] border-[1.5px] border-[#E2DFD6] bg-white p-5 space-y-4">
@@ -372,6 +540,14 @@ export function ListingDetailClient({
           <span>
             {listing.bathrooms} {listing.bathrooms === 1 ? "bathroom" : "bathrooms"}
           </span>
+          {typeof listing.size_sqm === "number" && listing.size_sqm > 0 && (
+            <>
+              <span aria-hidden="true" className="text-[#5B6663]">
+                ·
+              </span>
+              <span>{listing.size_sqm} sqm</span>
+            </>
+          )}
           <span aria-hidden="true" className="text-[#5B6663]">
             ·
           </span>

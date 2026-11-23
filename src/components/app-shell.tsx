@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { KeyhausLogo } from "@/components/keyhaus-logo";
 import { PWAInstallButton } from "@/components/pwa-manager";
+import { MapsQuotaBanner } from "@/components/viewers/maps-quota-banner";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/database";
 
@@ -52,6 +53,7 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-[#F6F4EF] text-[#17211F]">
+      <MapsQuotaBanner />
       <header className="sticky top-0 z-30 border-b-[1.5px] border-[#E2DFD6] bg-[#F6F4EF]/95 backdrop-blur-sm">
         <div
           className={cn(

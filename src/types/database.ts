@@ -17,6 +17,7 @@ export type WaterSourceType = "running_water" | "borehole" | "vendor_well" | "no
 export type QualityRating = "good" | "fair" | "poor";
 export type RoomKind = "flat" | "panorama";
 export type ViewingStatus = "pending" | "accepted" | "declined";
+export type DepthMapStatus = "pending" | "done" | "failed";
 
 export interface Profile {
   id: string;
@@ -24,6 +25,7 @@ export interface Profile {
   phone: string | null;
   role: UserRole | null;
   avatar_url: string | null;
+  is_admin?: boolean;
   created_at: string;
 }
 
@@ -48,12 +50,18 @@ export interface Listing {
   caution_fee: number | null;
   bedrooms: number;
   bathrooms: number;
+  size_sqm?: number | null;
   furnished: boolean;
   amenities: string[];
   state: string;
   lga: string;
   area: string;
   address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  approx_latitude?: number | null;
+  approx_longitude?: number | null;
+  matterport_url?: string | null;
   cover_path: string | null;
   cover_thumb_path: string | null;
   status: ListingStatus;
@@ -101,6 +109,73 @@ export interface RoomLink {
   x_pct: number | null;
   y_pct: number | null;
   label: string;
+}
+
+export type FloorPlanRoomType =
+  | "living"
+  | "bedroom"
+  | "kitchen"
+  | "bathroom"
+  | "hallway"
+  | "balcony"
+  | "compound"
+  | "other";
+
+export interface FloorPlanRoom {
+  id: string;
+  name: string;
+  type: FloorPlanRoomType;
+  xPct: number;
+  yPct: number;
+  widthPct: number;
+  heightPct: number;
+}
+
+export type FloorPlanWallSide = "top" | "right" | "bottom" | "left";
+
+export interface FloorPlanOpening {
+  kind: "door" | "window";
+  roomId: string;
+  wall: FloorPlanWallSide;
+  offsetPct: number;
+  widthPct: number;
+}
+
+export interface FloorPlan {
+  rooms: FloorPlanRoom[];
+  openings: FloorPlanOpening[];
+  summary: string;
+  isIllustrative: true;
+}
+
+export interface ListingFloorPlan {
+  id: string;
+  listing_id: string;
+  plan: FloorPlan;
+  model: string | null;
+  generated_at: string;
+  is_illustrative: boolean;
+}
+
+export interface DepthMap {
+  id: string;
+  listing_id: string;
+  photo_path: string;
+  depth_path: string;
+  status: DepthMapStatus;
+  created_at: string;
+}
+
+export interface ListingCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export interface ViewingModeFlags {
+  areaView: boolean;
+  streetView: boolean;
+  floorPlan2d: boolean;
+  view3d: boolean;
 }
 
 export interface SavedListing {
@@ -151,7 +226,7 @@ export interface ListingCardData {
 }
 
 export interface ListingDetailData {
-  listing: Omit<Listing, "address_line">;
+  listing: Omit<Listing, "address_line" | "latitude" | "longitude">;
   environment: ListingEnvironment | null;
   rooms: Room[];
   roomLinks: RoomLink[];
@@ -159,6 +234,10 @@ export interface ListingDetailData {
   isSaved: boolean;
   myViewingRequest: ViewingRequest | null;
   revealedAddress: string | null;
+  exactLocation: ListingCoordinates | null;
+  canViewExactLocation: boolean;
+  floorPlan: ListingFloorPlan | null;
+  depthMaps: DepthMap[];
   landlordPhone: string | null;
 }
 

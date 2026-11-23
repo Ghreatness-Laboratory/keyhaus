@@ -151,8 +151,57 @@ cross join (
 ) as r(name, kind, photo_path, width, height, sort_order)
 where not exists (select 1 from public.rooms existing where existing.listing_id = l.id);
 
--- Publish all 10 seeded listings
-update public.listings
-set status = 'published', published_at = now() - (row_number() over (order by id) || ' hours')::interval
-from (select id from public.listings) sub
-where public.listings.id = sub.id and public.listings.status = 'draft';
+-- Publish all 10 seeded listings and populate sample Nigerian coordinates + size_sqm
+update public.listings l
+set
+  status = 'published',
+  published_at = now() - (sub.rn || ' hours')::interval,
+  size_sqm = sub.sqm,
+  latitude = sub.lat,
+  longitude = sub.lng,
+  approx_latitude = round((sub.lat / 0.0035)::numeric) * 0.0035,
+  approx_longitude = round((sub.lng / 0.0035)::numeric) * 0.0035
+from (
+  values
+    ('22222222-2222-4222-8222-222222222201'::uuid, 1, 110, 6.5854, 3.3562),
+    ('22222222-2222-4222-8222-222222222202'::uuid, 2, 42, 6.5152, 3.3774),
+    ('22222222-2222-4222-8222-222222222203'::uuid, 3, 145, 6.4472, 3.4743),
+    ('22222222-2222-4222-8222-222222222204'::uuid, 4, 240, 9.0764, 7.4791),
+    ('22222222-2222-4222-8222-222222222205'::uuid, 5, 115, 9.1089, 7.4041),
+    ('22222222-2222-4222-8222-222222222206'::uuid, 6, 26, 8.9721, 7.3772),
+    ('22222222-2222-4222-8222-222222222207'::uuid, 7, 108, 4.8242, 7.0011),
+    ('22222222-2222-4222-8222-222222222208'::uuid, 8, 24, 4.8961, 6.9122),
+    ('22222222-2222-4222-8222-222222222209'::uuid, 9, 138, 7.4231, 3.9082),
+    ('22222222-2222-4222-8222-222222222210'::uuid, 10, 105, 11.9961, 8.5452)
+) as sub(id, rn, sqm, lat, lng)
+where l.id = sub.id and l.status = 'draft';
+
+insert into public.listing_floor_plans (listing_id, plan, model, is_illustrative)
+values (
+  '22222222-2222-4222-8222-222222222201',
+  '{
+    "rooms": [
+      {"id": "living", "name": "Living room", "type": "living", "xPct": 8, "yPct": 12, "widthPct": 44, "heightPct": 44},
+      {"id": "kitchen", "name": "Kitchen", "type": "kitchen", "xPct": 52, "yPct": 12, "widthPct": 40, "heightPct": 28},
+      {"id": "hall", "name": "Hallway", "type": "hallway", "xPct": 52, "yPct": 40, "widthPct": 14, "heightPct": 16},
+      {"id": "bath1", "name": "Bath 1", "type": "bathroom", "xPct": 66, "yPct": 40, "widthPct": 26, "heightPct": 16},
+      {"id": "bed1", "name": "Bedroom 1", "type": "bedroom", "xPct": 8, "yPct": 56, "widthPct": 42, "heightPct": 32},
+      {"id": "bed2", "name": "Bedroom 2", "type": "bedroom", "xPct": 50, "yPct": 56, "widthPct": 42, "heightPct": 32}
+    ],
+    "openings": [
+      {"kind": "door", "roomId": "living", "wall": "top", "offsetPct": 30, "widthPct": 18},
+      {"kind": "window", "roomId": "living", "wall": "left", "offsetPct": 45, "widthPct": 36},
+      {"kind": "door", "roomId": "kitchen", "wall": "left", "offsetPct": 50, "widthPct": 22},
+      {"kind": "window", "roomId": "kitchen", "wall": "right", "offsetPct": 45, "widthPct": 34},
+      {"kind": "door", "roomId": "bed1", "wall": "top", "offsetPct": 72, "widthPct": 18},
+      {"kind": "window", "roomId": "bed1", "wall": "bottom", "offsetPct": 48, "widthPct": 35},
+      {"kind": "door", "roomId": "bed2", "wall": "top", "offsetPct": 24, "widthPct": 18},
+      {"kind": "window", "roomId": "bed2", "wall": "bottom", "offsetPct": 52, "widthPct": 35}
+    ],
+    "summary": "2-bedroom flat arranged around a bright central living room with separate kitchen and front entry.",
+    "isIllustrative": true
+  }'::jsonb,
+  'seeded-illustrative',
+  true
+)
+on conflict (listing_id) do nothing;

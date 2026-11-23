@@ -76,29 +76,27 @@ export const listingDetailsSchema = z.object({
     .min(10000, "Rent must be at least ₦10,000")
     .max(500000000, "Rent amount looks too high"),
   rent_period: rentPeriodSchema,
-  agency_fee: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(500000000)
-    .nullable()
+  agency_fee: z
+    .union([z.null(), z.coerce.number().int().min(0).max(500000000)])
     .optional(),
-  legal_fee: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(500000000)
-    .nullable()
+  legal_fee: z
+    .union([z.null(), z.coerce.number().int().min(0).max(500000000)])
     .optional(),
-  caution_fee: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(500000000)
-    .nullable()
+  caution_fee: z
+    .union([z.null(), z.coerce.number().int().min(0).max(500000000)])
     .optional(),
   bedrooms: z.coerce.number().int().min(0).max(20),
   bathrooms: z.coerce.number().int().min(0).max(20),
+  size_sqm: z
+    .union([
+      z.null(),
+      z.coerce
+        .number()
+        .int("Enter whole square metres")
+        .min(5, "Size must be at least 5 sqm")
+        .max(50000, "Size looks too large"),
+    ])
+    .optional(),
   furnished: z.boolean(),
   amenities: z.array(z.string()),
   state: z.string().trim().min(2, "Select a state"),
@@ -109,6 +107,27 @@ export const listingDetailsSchema = z.object({
     .trim()
     .min(5, "Enter the street address (kept private until viewing accepted)")
     .max(200),
+  matterport_url: z
+    .string()
+    .trim()
+    .refine(
+      (val) => {
+        if (!val) return true;
+        try {
+          const parsed = new URL(val);
+          return (
+            parsed.protocol === "https:" &&
+            (parsed.hostname === "my.matterport.com" ||
+              parsed.hostname === "matterport.com")
+          );
+        } catch {
+          return false;
+        }
+      },
+      { message: "Enter a valid HTTPS link from my.matterport.com" }
+    )
+    .nullable()
+    .optional(),
 });
 
 export const listingEnvironmentSchema = z.object({
@@ -169,4 +188,59 @@ export const reportListingSchema = z.object({
     .trim()
     .min(10, "Please explain what is inaccurate (at least 10 characters)")
     .max(REPORT_MAX_CHARS, `Maximum ${REPORT_MAX_CHARS} characters`),
+});
+
+export const floorPlanRoomTypeSchema = z.enum([
+  "living",
+  "bedroom",
+  "kitchen",
+  "bathroom",
+  "hallway",
+  "balcony",
+  "compound",
+  "other",
+]);
+
+export const floorPlanRoomSchema = z
+  .object({
+    id: z.string().trim().min(1).max(40),
+    name: z.string().trim().min(1).max(40),
+    type: floorPlanRoomTypeSchema,
+    xPct: z.number().min(0).max(95),
+    yPct: z.number().min(0).max(95),
+    widthPct: z.number().min(5).max(100),
+    heightPct: z.number().min(5).max(100),
+  })
+  .refine((r) => r.xPct + r.widthPct <= 100.5, {
+    message: "Room xPct + widthPct must stay inside 100%",
+  })
+  .refine((r) => r.yPct + r.heightPct <= 100.5, {
+    message: "Room yPct + heightPct must stay inside 100%",
+  });
+
+export const floorPlanOpeningSchema = z.object({
+  kind: z.enum(["door", "window"]),
+  roomId: z.string().trim().min(1).max(40),
+  wall: z.enum(["top", "right", "bottom", "left"]),
+  offsetPct: z.number().min(5).max(95),
+  widthPct: z.number().min(4).max(60),
+});
+
+export const floorPlanSchema = z.object({
+  rooms: z.array(floorPlanRoomSchema).min(1).max(16),
+  openings: z.array(floorPlanOpeningSchema).max(48).default([]),
+  summary: z.string().trim().min(5).max(300),
+  isIllustrative: z.literal(true).default(true),
+});
+
+export const floorPlanGenerateSchema = z.object({
+  regenerate: z.boolean().optional().default(false),
+});
+
+export const depthMapRequestSchema = z.object({
+  photoPath: z.string().trim().min(1).max(500),
+});
+
+export const geocodeRequestSchema = z.object({
+  force: z.boolean().optional().default(false),
 });

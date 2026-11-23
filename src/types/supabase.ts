@@ -1,7 +1,11 @@
 import type {
+  DepthMap,
+  DepthMapStatus,
   FloodingRating,
+  FloorPlan,
   Listing,
   ListingEnvironment,
+  ListingFloorPlan,
   ListingStatus,
   PowerGridRating,
   Profile,
@@ -34,6 +38,7 @@ export interface Database {
           phone?: string | null;
           role?: UserRole | null;
           avatar_url?: string | null;
+          is_admin?: boolean;
           created_at?: string;
         };
         Update: {
@@ -58,12 +63,18 @@ export interface Database {
           caution_fee?: number | null;
           bedrooms?: number;
           bathrooms?: number;
+          size_sqm?: number | null;
           furnished?: boolean;
           amenities?: string[];
           state: string;
           lga: string;
           area: string;
           address_line?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          approx_latitude?: number | null;
+          approx_longitude?: number | null;
+          matterport_url?: string | null;
           cover_path?: string | null;
           cover_thumb_path?: string | null;
           status?: ListingStatus;
@@ -118,6 +129,30 @@ export interface Database {
         };
         Update: Partial<Omit<RoomLink, "id">>;
       };
+      listing_floor_plans: {
+        Row: ListingFloorPlan;
+        Insert: {
+          id?: string;
+          listing_id: string;
+          plan: FloorPlan;
+          model?: string | null;
+          generated_at?: string;
+          is_illustrative?: boolean;
+        };
+        Update: Partial<Omit<ListingFloorPlan, "id" | "listing_id">>;
+      };
+      listing_depth_maps: {
+        Row: DepthMap;
+        Insert: {
+          id?: string;
+          listing_id: string;
+          photo_path: string;
+          depth_path: string;
+          status?: DepthMapStatus;
+          created_at?: string;
+        };
+        Update: Partial<Omit<DepthMap, "id" | "listing_id" | "created_at">>;
+      };
       saved_listings: {
         Row: SavedListing;
         Insert: {
@@ -161,6 +196,10 @@ export interface Database {
       };
     };
     Functions: {
+      is_admin: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       get_landlord_contact: {
         Args: { p_listing_id: string };
         Returns: { full_name: string | null; phone: string | null }[];
@@ -168,6 +207,10 @@ export interface Database {
       get_listing_address: {
         Args: { p_listing_id: string };
         Returns: string | null;
+      };
+      get_listing_location: {
+        Args: { p_listing_id: string };
+        Returns: { latitude: number; longitude: number }[];
       };
     };
   };

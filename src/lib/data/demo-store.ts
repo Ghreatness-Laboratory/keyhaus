@@ -1,6 +1,8 @@
 import type {
+  DepthMap,
   Listing,
   ListingEnvironment,
+  ListingFloorPlan,
   Profile,
   Report,
   Room,
@@ -19,6 +21,8 @@ export interface DemoStoreState {
   environments: Record<string, ListingEnvironment>;
   rooms: Record<string, Room>;
   roomLinks: Record<string, RoomLink>;
+  floorPlans: Record<string, ListingFloorPlan>;
+  depthMaps: Record<string, DepthMap>;
   saved: Record<string, string[]>; // userId -> listingId[]
   viewings: Record<string, ViewingRequest>;
   reports: Report[];
@@ -881,8 +885,38 @@ function buildInitialDemoState(): DemoStoreState {
   const rooms: Record<string, Room> = {};
   const roomLinks: Record<string, RoomLink> = {};
 
+  const demoCoords: Record<
+    string,
+    { lat: number; lng: number; sizeSqm: number }
+  > = {
+    "22222222-2222-4222-8222-222222222201": { lat: 6.5854, lng: 3.3562, sizeSqm: 110 },
+    "22222222-2222-4222-8222-222222222202": { lat: 6.5152, lng: 3.3774, sizeSqm: 42 },
+    "22222222-2222-4222-8222-222222222203": { lat: 6.4472, lng: 3.4743, sizeSqm: 145 },
+    "22222222-2222-4222-8222-222222222204": { lat: 9.0764, lng: 7.4791, sizeSqm: 240 },
+    "22222222-2222-4222-8222-222222222205": { lat: 9.1089, lng: 7.4041, sizeSqm: 115 },
+    "22222222-2222-4222-8222-222222222206": { lat: 8.9721, lng: 7.3772, sizeSqm: 26 },
+    "22222222-2222-4222-8222-222222222207": { lat: 4.8242, lng: 7.0011, sizeSqm: 108 },
+    "22222222-2222-4222-8222-222222222208": { lat: 4.8961, lng: 6.9122, sizeSqm: 24 },
+    "22222222-2222-4222-8222-222222222209": { lat: 7.4231, lng: 3.9082, sizeSqm: 138 },
+    "22222222-2222-4222-8222-222222222210": { lat: 11.9961, lng: 8.5452, sizeSqm: 105 },
+  };
+
   for (const item of seedListings) {
-    listings[item.listing.id] = item.listing;
+    const coordInfo = demoCoords[item.listing.id];
+    const step = 0.0035;
+    listings[item.listing.id] = {
+      ...item.listing,
+      size_sqm: coordInfo?.sizeSqm ?? null,
+      latitude: coordInfo?.lat ?? null,
+      longitude: coordInfo?.lng ?? null,
+      approx_latitude: coordInfo
+        ? Number((Math.round(coordInfo.lat / step) * step).toFixed(5))
+        : null,
+      approx_longitude: coordInfo
+        ? Number((Math.round(coordInfo.lng / step) * step).toFixed(5))
+        : null,
+      matterport_url: null,
+    };
     environments[item.listing.id] = item.env;
     item.rooms.forEach((r, idx) => {
       rooms[r.id] = {
@@ -949,12 +983,47 @@ function buildInitialDemoState(): DemoStoreState {
     }
   }
 
+  const floorPlans: Record<string, ListingFloorPlan> = {
+    "22222222-2222-4222-8222-222222222201": {
+      id: "55555555-0001-4000-8000-000000000001",
+      listing_id: "22222222-2222-4222-8222-222222222201",
+      model: "seeded-illustrative",
+      generated_at: "2026-11-22T09:00:00.000Z",
+      is_illustrative: true,
+      plan: {
+        rooms: [
+          { id: "living", name: "Living room", type: "living", xPct: 8, yPct: 12, widthPct: 44, heightPct: 44 },
+          { id: "kitchen", name: "Kitchen", type: "kitchen", xPct: 52, yPct: 12, widthPct: 40, heightPct: 28 },
+          { id: "hall", name: "Hallway", type: "hallway", xPct: 52, yPct: 40, widthPct: 14, heightPct: 16 },
+          { id: "bath1", name: "Bath 1", type: "bathroom", xPct: 66, yPct: 40, widthPct: 26, heightPct: 16 },
+          { id: "bed1", name: "Bedroom 1", type: "bedroom", xPct: 8, yPct: 56, widthPct: 42, heightPct: 32 },
+          { id: "bed2", name: "Bedroom 2", type: "bedroom", xPct: 50, yPct: 56, widthPct: 42, heightPct: 32 },
+        ],
+        openings: [
+          { kind: "door", roomId: "living", wall: "top", offsetPct: 30, widthPct: 18 },
+          { kind: "window", roomId: "living", wall: "left", offsetPct: 45, widthPct: 36 },
+          { kind: "door", roomId: "kitchen", wall: "left", offsetPct: 50, widthPct: 22 },
+          { kind: "window", roomId: "kitchen", wall: "right", offsetPct: 45, widthPct: 34 },
+          { kind: "door", roomId: "bed1", wall: "top", offsetPct: 72, widthPct: 18 },
+          { kind: "window", roomId: "bed1", wall: "bottom", offsetPct: 48, widthPct: 35 },
+          { kind: "door", roomId: "bed2", wall: "top", offsetPct: 24, widthPct: 18 },
+          { kind: "window", roomId: "bed2", wall: "bottom", offsetPct: 52, widthPct: 35 },
+        ],
+        summary:
+          "2-bedroom flat arranged around a bright central living room with separate kitchen and front entry.",
+        isIllustrative: true,
+      },
+    },
+  };
+
   return {
     users,
     listings,
     environments,
     rooms,
     roomLinks,
+    floorPlans,
+    depthMaps: {},
     saved: {
       [demoRenterId]: ["22222222-2222-4222-8222-222222222201"],
     },

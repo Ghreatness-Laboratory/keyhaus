@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ListingDetailClient } from "@/components/listing-detail-client";
 import { getCurrentSession, getListingDetail } from "@/lib/data/queries";
+import { getViewingModeFlags } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ export default async function ListingDetailPage({
     notFound();
   }
 
+  const viewingModeFlags = getViewingModeFlags();
+
   return (
     <AppShell
       role={session.profile?.role ?? null}
@@ -29,6 +32,8 @@ export default async function ListingDetailPage({
         detail={detail}
         isSignedIn={Boolean(session.userId)}
         currentUserId={session.userId}
+        isAdmin={Boolean(session.profile?.is_admin)}
+        viewingModeFlags={viewingModeFlags}
       />
     </AppShell>
   );

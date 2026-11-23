@@ -21,11 +21,13 @@ const supabaseHost = (() => {
 
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${supabaseHost}`.trim(),
-  "font-src 'self' data:",
-  `connect-src 'self' ${supabaseHost} https://*.supabase.co wss://*.supabase.co`.trim(),
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  `img-src 'self' data: blob: ${supabaseHost} https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com`.trim(),
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "worker-src 'self' blob:",
+  `connect-src 'self' ${supabaseHost} https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com`.trim(),
+  "frame-src 'self' https://my.matterport.com https://matterport.com",
   "frame-ancestors 'self' https://aistudio.google.com https://*.google.com",
   "base-uri 'self'",
   "form-action 'self'",

@@ -158,12 +158,14 @@ export function LandlordWizardClient({
       caution_fee: initialListing?.caution_fee ?? null,
       bedrooms: initialListing?.bedrooms ?? 2,
       bathrooms: initialListing?.bathrooms ?? 2,
+      size_sqm: initialListing?.size_sqm ?? null,
       furnished: initialListing?.furnished ?? false,
       amenities: initialListing?.amenities ?? ["prepaid_meter", "borehole"],
       state: initialListing?.state ?? "Lagos",
       lga: initialListing?.lga ?? "Ikeja",
       area: initialListing?.area ?? "",
       address_line: initialListing?.address_line ?? "",
+      matterport_url: initialListing?.matterport_url ?? "",
     },
   });
 
@@ -343,6 +345,14 @@ export function LandlordWizardClient({
         sort_order: rooms.length,
       };
       setRooms((prev) => [...prev, nextRoom]);
+
+      if (nextRoom.kind === "flat") {
+        void fetch(`/api/listings/${listingId}/depth-map`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photoPath: storedPath }),
+        }).catch(() => undefined);
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to process photo.");
     } finally {
@@ -658,7 +668,10 @@ export function LandlordWizardClient({
                   step={10000}
                   placeholder="0"
                   {...detailsForm.register("caution_fee", {
-                    setValueAs: (v) => (v === "" ? null : Number(v)),
+                    setValueAs: (v) =>
+                      v === "" || v === null || v === undefined || Number.isNaN(Number(v))
+                        ? null
+                        : Number(v),
                   })}
                 />
               </div>
@@ -671,7 +684,10 @@ export function LandlordWizardClient({
                   step={10000}
                   placeholder="0"
                   {...detailsForm.register("agency_fee", {
-                    setValueAs: (v) => (v === "" ? null : Number(v)),
+                    setValueAs: (v) =>
+                      v === "" || v === null || v === undefined || Number.isNaN(Number(v))
+                        ? null
+                        : Number(v),
                   })}
                 />
               </div>
@@ -684,13 +700,16 @@ export function LandlordWizardClient({
                   step={10000}
                   placeholder="0"
                   {...detailsForm.register("legal_fee", {
-                    setValueAs: (v) => (v === "" ? null : Number(v)),
+                    setValueAs: (v) =>
+                      v === "" || v === null || v === undefined || Number.isNaN(Number(v))
+                        ? null
+                        : Number(v),
                   })}
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="det-beds">Bedrooms</Label>
                 <Input
@@ -710,6 +729,27 @@ export function LandlordWizardClient({
                   max={20}
                   {...detailsForm.register("bathrooms")}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="det-size">Size in sqm (optional)</Label>
+                <Input
+                  id="det-size"
+                  type="number"
+                  min={5}
+                  max={50000}
+                  placeholder="e.g. 110"
+                  {...detailsForm.register("size_sqm", {
+                    setValueAs: (v) =>
+                      v === "" || v === null || v === undefined || Number.isNaN(Number(v))
+                        ? null
+                        : Number(v),
+                  })}
+                />
+                {detailsForm.formState.errors.size_sqm && (
+                  <p className="text-xs text-[#B3261E]">
+                    {detailsForm.formState.errors.size_sqm.message}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -814,6 +854,23 @@ export function LandlordWizardClient({
               {detailsForm.formState.errors.address_line && (
                 <p className="text-xs text-[#B3261E]">
                   {detailsForm.formState.errors.address_line.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="det-matterport">
+                Matterport 3D tour link (optional)
+              </Label>
+              <Input
+                id="det-matterport"
+                type="url"
+                placeholder="https://my.matterport.com/show/?m=..."
+                {...detailsForm.register("matterport_url")}
+              />
+              {detailsForm.formState.errors.matterport_url && (
+                <p className="text-xs text-[#B3261E]">
+                  {detailsForm.formState.errors.matterport_url.message}
                 </p>
               )}
             </div>

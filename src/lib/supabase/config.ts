@@ -23,3 +23,18 @@ export function resolveListingPhotoUrl(photoPath: string | null | undefined): st
   }
   return `${url.replace(/\/$/, "")}/storage/v1/object/public/listing-photos/${photoPath}`;
 }
+
+export function resolveDepthMapUrl(depthPath: string | null | undefined): string | null {
+  if (!depthPath) return null;
+  if (
+    depthPath.startsWith("/") ||
+    depthPath.startsWith("http://") ||
+    depthPath.startsWith("https://") ||
+    depthPath.startsWith("data:")
+  ) {
+    return depthPath;
+  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) return null;
+  return `${url.replace(/\/$/, "")}/storage/v1/object/public/depth-maps/${depthPath}`;
+}
